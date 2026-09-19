@@ -1,0 +1,7 @@
+{
+  "framework": null,
+  "installCommand": "npm install",
+  "buildCommand": "vite build apps/web",
+  "outputDirectory": "apps/web/dist",
+  "devCommand": "vite apps/web --port $PORT"
+}

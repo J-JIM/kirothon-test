@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+data/evidence
+scripts
+node_modules
+apps/web/dist
+logs
