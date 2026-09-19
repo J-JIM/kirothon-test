@@ -1,10 +1,10 @@
 import { useState } from "react";
 import type { AppState, Update } from "../store.ts";
-import type { Constraint } from "../../../packages/core/types.ts";
+import type { Constraint } from "../../../../packages/core/types.ts";
 import { Card, Chip, ConstraintTable, timeline, pushLog } from "../ui.tsx";
 import { uid } from "../store.ts";
 import { callLLM, imageToPayload, providerLabel } from "../lib/client.ts";
-import { timetableToConstraints, utteranceToConstraints } from "../../../packages/core/llmInputs.ts";
+import { timetableToConstraints, utteranceToConstraints } from "../../../../packages/core/llmInputs.ts";
 import { scenario, demoTimetables } from "../demo.ts";
 
 const SHOT_KEY = (pid: string) => `matchum:shot:${pid}`;
@@ -285,7 +285,7 @@ export function MembersStep({ s, update }: { s: AppState; update: Update }) {
         요일: "월",
         시작: "18:00",
         끝: "21:00",
-        종류: "아르바이트",
+        종류: "알바",
         유연성: "고정",
         조정폭분: 0,
         이름: "",

@@ -1,17 +1,17 @@
 import { useState } from "react";
 import type { AppState, Update, BranchView } from "../store.ts";
-import type { Branch, Slot } from "../../../packages/core/types.ts";
+import type { Branch, Slot } from "../../../../packages/core/types.ts";
 import { Card, Chip, timeline, pushLog } from "../ui.tsx";
 import { uid } from "../store.ts";
-import { intersect, calendarize, rank, explain } from "../../../packages/core/slots.ts";
+import { intersect, calendarize, rank, explain } from "../../../../packages/core/slots.ts";
 import {
   applyAnswer,
   enumerateBranches,
   findConstraint,
   validateBranch,
-} from "../../../packages/core/concession.ts";
-import { concessionInput } from "../../../packages/core/llmInputs.ts";
-import { askText, inviteMail } from "../../../packages/core/templates.ts";
+} from "../../../../packages/core/concession.ts";
+import { concessionInput } from "../../../../packages/core/llmInputs.ts";
+import { askText, inviteMail } from "../../../../packages/core/templates.ts";
 import { callLLM, sendMail, providerLabel } from "../lib/client.ts";
 import { scenario } from "../demo.ts";
 
@@ -387,7 +387,7 @@ export function BoardStep({ s, update }: { s: AppState; update: Update }) {
                         .map((ask) => {
                           const party = s.parties.find((p) => p.id === ask.관계자id);
                           const constraint = party?.제약.find((c) => c.id === ask.제약id);
-                          return `${party?.이름}의 ${ask.요일} ${
+                          return `${party?.이름}의 ${v.branch.생성슬롯.요일} ${
                             constraint?.이름 ?? ask.제약id
                           } ${ask.분}분 ${ask.방향 === "늦게시작" ? "늦게 시작" : "일찍 끝"}`;
                         })

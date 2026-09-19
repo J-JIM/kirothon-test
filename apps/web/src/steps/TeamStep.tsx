@@ -1,7 +1,7 @@
 import type { AppState, Update } from "../store.ts";
 import { Card, Chip } from "../ui.tsx";
-import { isValidMMDD } from "../../../packages/core/time.ts";
-import { fmtKST } from "../../../packages/core/time.ts";
+import { isValidMMDD } from "../../../../packages/core/time.ts";
+import { fmtKST } from "../../../../packages/core/time.ts";
 
 export function TeamStep({ s, update }: { s: AppState; update: Update }) {
   const invalidDeadline = s.마감 && !isValidMMDD(s.마감);

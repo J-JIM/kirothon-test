@@ -5,11 +5,11 @@ import type { AppState, LogEntry } from "./store.ts";
 export const DAYS: Weekday[] = ["월", "화", "수", "목", "금", "토", "일"];
 export const KINDS: ConstraintType[] = [
   "수업",
-  "동아리",
-  "아르바이트",
-  "운동",
-  "약속",
-  "기타",
+  "알바",
+  "타팀플",
+  "통학",
+  "개인",
+  "타과목마감",
 ];
 
 // Card 컴포넌트

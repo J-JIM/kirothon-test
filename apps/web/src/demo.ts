@@ -23,7 +23,10 @@ import p3 from "../../../data/demo/timetables/p3.png";
 import p4 from "../../../data/demo/timetables/p4.png";
 
 export const demoTimetables: Record<string, string> = { p1, p2, p3, p4 };
-export const demoMinutes: Record<number, string> = {}; // C5에서 ?raw import로 채움
+import minutes1 from "../../../data/demo/minutes_1.txt?raw";
+import minutes2 from "../../../data/demo/minutes_2.txt?raw";
+
+export const demoMinutes: Record<number, string> = { 1: minutes1, 2: minutes2 };
 
 // 데모 캐시
 const cacheFiles = import.meta.glob("../../../data/cache/demo/*.json", {
