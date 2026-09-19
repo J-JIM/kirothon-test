@@ -9,14 +9,17 @@ import { kstParts, mmddAfter, isValidMMDD } from "../../../../packages/core/time
 import { sanitizeMinutes, evidenceOk, utterances, previousUtterance } from "../../../../packages/core/minutes.ts";
 import { minutesInput } from "../../../../packages/core/llmInputs.ts";
 import { noticeMail } from "../../../../packages/core/templates.ts";
+import { carryOver, sanitizeProgress } from "../../../../packages/core/plan.ts";
 import { demoMinutes } from "../demo.ts";
 import type { RawMinutes } from "../../../../packages/core/minutes.ts";
+import type { Progress } from "../../../../packages/core/types.ts";
 
 export function MinutesStep({ s, update }: { s: AppState; update: Update }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ text: string; source: "demo" | "upload" } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [progressError, setProgressError] = useState<string | null>(null);
 
   if (s.rounds.length === 0) {
     return (
@@ -35,6 +38,7 @@ export function MinutesStep({ s, update }: { s: AppState; update: Update }) {
   const targetIdx = firstUnsent >= 0 ? firstUnsent : s.rounds.length - 1;
   const round = s.rounds[targetIdx];
   const allSent = s.rounds.every((r) => r.noticeSent);
+  const 계획 = s.plan?.회차들.find((x) => x.회차 === round.회차) ?? null;
 
   const today = kstParts(s.기준시각);
   const meet = mmddAfter(round.확정슬롯.날짜!, { y: today.y, m: today.m, d: today.d });
@@ -68,6 +72,63 @@ export function MinutesStep({ s, update }: { s: AppState; update: Update }) {
 
   const m = round.minutes;
   const next = round.next;
+
+  // checkProgress: 진행도 확인
+  const checkProgress = async () => {
+    if (!계획 || 계획.할일.length === 0 || !m || !m.원문.trim()) return;
+
+    setBusy(`${round.회차}회차 진행도 확인 중… (${providerLabel(s.llmProvider)}, 최대 40초)`);
+    setProgressError(null);
+
+    const r = await callLLM(
+      "reviewProgress",
+      {
+        회차: round.회차,
+        목표: 계획.목표,
+        할일: 계획.할일,
+        원문: m.원문,
+      },
+      {
+        mode: s.llmMode,
+        provider: s.llmProvider,
+        demoKey: null,
+      }
+    );
+
+    update((d) => {
+      pushLog(d, r.log);
+
+      if (r.ok && r.data) {
+        try {
+          d.rounds[targetIdx].progress = sanitizeProgress(r.data, {
+            회차: round.회차,
+            할일: 계획.할일,
+            원문: m.원문,
+          });
+          const prog = d.rounds[targetIdx].progress!;
+          timeline(
+            d,
+            "agent",
+            `${round.회차}회차 진행도 ${prog.진행률}% — 다음 시작점: ${prog.다음시작점}`
+          );
+        } catch (e) {
+          setProgressError(`진행도 검증 실패: ${String(e)}`);
+          d.rounds[targetIdx].progress = sanitizeProgress(
+            {},
+            { 회차: round.회차, 할일: 계획.할일, 원문: m.원문 }
+          );
+        }
+      } else {
+        setProgressError(`진행도 확인 실패: ${r.error} — 표에서 직접 고치세요.`);
+        d.rounds[targetIdx].progress = sanitizeProgress(
+          {},
+          { 회차: round.회차, 할일: 계획.할일, 원문: m.원문 }
+        );
+      }
+    });
+
+    setBusy(null);
+  };
 
   // extract: 회의록 추출
   const extract = async () => {
@@ -183,8 +244,31 @@ export function MinutesStep({ s, update }: { s: AppState; update: Update }) {
 
     setBusy("정리 메일 4통 보내는 중…");
 
+    // 메일 본문에 계획 정보 반영
+    const progress = round.progress ?? null;
+    const 이월 = s.plan && 계획
+      ? carryOver(
+          s.plan,
+          round.회차,
+          progress ?? sanitizeProgress({}, { 회차: round.회차, 할일: 계획.할일, 원문: "" })
+        )
+      : [];
+
     const mails = s.parties.map((p) => {
-      const mail = noticeMail(p, s.parties, m, next ?? null, s.team.이름);
+      let mail;
+      if (s.plan && 계획) {
+        mail = noticeMail(
+          p,
+          s.parties,
+          m,
+          next ?? null,
+          s.team.이름,
+          undefined,
+          { round: 계획, progress, 이월 }
+        );
+      } else {
+        mail = noticeMail(p, s.parties, m, next ?? null, s.team.이름);
+      }
       return { alias: p.id, subject: mail.subject, text: mail.text };
     });
 
@@ -192,7 +276,20 @@ export function MinutesStep({ s, update }: { s: AppState; update: Update }) {
 
     update((d) => {
       s.parties.forEach((p) => {
-        const mail = noticeMail(p, s.parties, m, next ?? null, s.team.이름);
+        let mail;
+        if (s.plan && 계획) {
+          mail = noticeMail(
+            p,
+            s.parties,
+            m,
+            next ?? null,
+            s.team.이름,
+            undefined,
+            { round: 계획, progress, 이월 }
+          );
+        } else {
+          mail = noticeMail(p, s.parties, m, next ?? null, s.team.이름);
+        }
         d.inbox.unshift({
           id: uid(),
           at: Date.now(),
@@ -215,16 +312,35 @@ export function MinutesStep({ s, update }: { s: AppState; update: Update }) {
         })`
       );
 
-      if (next && targetIdx === d.rounds.length - 1) {
-        d.rounds.push({
-          회차: round.회차 + 1,
-          확정슬롯: { ...next, 상태: "확정" },
-        });
-        timeline(
-          d,
-          "agent",
-          `다음 조율: ${round.회차 + 1}회차 ${next.날짜} ${next.시작} (데모는 첫 후보 자동 확정)`
-        );
+      // 다음 회차 처리
+      if (d.plan) {
+        // 계획이 있으면 rounds는 이미 존재하므로 이월만 반영
+        if (이월.length > 0 && targetIdx < d.rounds.length - 1) {
+          const nextRoundPlan = d.plan.회차들.find(
+            (x) => x.회차 === round.회차 + 1
+          );
+          if (nextRoundPlan) {
+            nextRoundPlan.할일 = [...이월, ...nextRoundPlan.할일];
+            timeline(
+              d,
+              "agent",
+              `이월 ${이월.length}개를 ${round.회차 + 1}회차 할 일 앞에 넣었습니다`
+            );
+          }
+        }
+      } else {
+        // 계획이 없으면 기존 동작: 다음 회차 push
+        if (next && targetIdx === d.rounds.length - 1) {
+          d.rounds.push({
+            회차: round.회차 + 1,
+            확정슬롯: { ...next, 상태: "확정" },
+          });
+          timeline(
+            d,
+            "agent",
+            `다음 조율: ${round.회차 + 1}회차 ${next.날짜} ${next.시작} (데모는 첫 후보 자동 확정)`
+          );
+        }
       }
     });
 
@@ -247,6 +363,34 @@ export function MinutesStep({ s, update }: { s: AppState; update: Update }) {
 
   return (
     <div className="stack">
+      {/* 0. 회차 계획 표시 */}
+      <Card title={`${round.회차}회차 계획`}>
+        {계획 ? (
+          <dl className="kv">
+            <dt>목표</dt>
+            <dd>{계획.목표}</dd>
+            <dt>산출물</dt>
+            <dd>{계획.산출물 || <span className="muted">(없음)</span>}</dd>
+            <dt>할 일</dt>
+            <dd>
+              {계획.할일.length > 0 ? (
+                <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
+                  {계획.할일.map((item, i) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="muted">(없음)</span>
+              )}
+            </dd>
+          </dl>
+        ) : (
+          <p className="muted small">
+            계획 단계에서 회차 계획을 만들면 여기 목표와 할 일이 보입니다.
+          </p>
+        )}
+      </Card>
+
       {/* 1. 회의록 입력 */}
       <Card
         title={`${round.회차}회차 미팅 — ${round.확정슬롯.날짜} ${round.확정슬롯.시작}`}
@@ -504,6 +648,121 @@ export function MinutesStep({ s, update }: { s: AppState; update: Update }) {
               팀 프로젝트 종료 단계로
             </button>
           </div>
+        </Card>
+      )}
+
+      {/* 3. 진행도 */}
+      {m && 계획 && (
+        <Card title="계획 대비 진행도">
+          {계획.할일.length === 0 ? (
+            <p className="muted small">
+              이 회차에 할 일이 없어 진행도를 판정할 수 없습니다 — 계획 단계에서 할 일을 넣으세요
+            </p>
+          ) : round.progress ? (
+            <>
+              <div style={{ marginBottom: "1rem" }}>
+                <Chip
+                  kind={
+                    round.progress.진행률 === 100
+                      ? "ok"
+                      : round.progress.진행률 >= 50
+                      ? "warn"
+                      : "bad"
+                  }
+                >
+                  진행률 {round.progress.진행률}%
+                </Chip>
+              </div>
+
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>항목</th>
+                      <th>상태</th>
+                      <th>근거문장</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {round.progress.항목들.map((item, i) => (
+                      <tr key={i}>
+                        <td>{item.항목}</td>
+                        <td>
+                          <select
+                            value={item.상태}
+                            onChange={(e) => {
+                              const newStatus = e.target.value as "완료" | "부분" | "미완";
+                              update((d) => {
+                                if (d.rounds[targetIdx].progress) {
+                                  d.rounds[targetIdx].progress!.항목들[i].상태 = newStatus;
+                                  // 진행률 재계산
+                                  const items = d.rounds[targetIdx].progress!.항목들;
+                                  const sum = items.reduce((acc, it) => {
+                                    if (it.상태 === "완료") return acc + 1;
+                                    if (it.상태 === "부분") return acc + 0.5;
+                                    return acc;
+                                  }, 0);
+                                  d.rounds[targetIdx].progress!.진행률 = Math.round(
+                                    (sum / items.length) * 100
+                                  );
+                                }
+                              });
+                            }}
+                          >
+                            <option value="완료">완료</option>
+                            <option value="부분">부분</option>
+                            <option value="미완">미완</option>
+                          </select>
+                        </td>
+                        <td>
+                          {item.근거문장 ? (
+                            <span title={item.근거문장}>…</span>
+                          ) : (
+                            <span className="muted">회의록 근거 없음</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <label style={{ marginTop: "1rem" }}>
+                다음 시작점
+                <input
+                  type="text"
+                  className="wide"
+                  value={round.progress.다음시작점}
+                  onChange={(e) =>
+                    update((d) => {
+                      if (d.rounds[targetIdx].progress) {
+                        d.rounds[targetIdx].progress!.다음시작점 = e.target.value;
+                      }
+                    })
+                  }
+                />
+              </label>
+
+              <p className="muted small" style={{ marginTop: "0.5rem" }}>
+                근거 문장이 회의록 원문에 없으면 완료로 인정하지 않습니다.
+              </p>
+
+              {progressError && <p className="error">{progressError}</p>}
+            </>
+          ) : (
+            <>
+              <div className="actions">
+                <button
+                  className="primary"
+                  onClick={checkProgress}
+                  disabled={!!busy || !m.원문.trim()}
+                >
+                  진행도 확인
+                </button>
+              </div>
+              {progressError && <p className="error">{progressError}</p>}
+            </>
+          )}
         </Card>
       )}
     </div>
