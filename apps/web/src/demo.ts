@@ -17,7 +17,12 @@ export interface Scenario {
 
 export const scenario = scenarioJson as unknown as Scenario;
 
-export const demoTimetables: Record<string, string> = {}; // C3에서 PNG import로 채움
+import p1 from "../../../data/demo/timetables/p1.png";
+import p2 from "../../../data/demo/timetables/p2.png";
+import p3 from "../../../data/demo/timetables/p3.png";
+import p4 from "../../../data/demo/timetables/p4.png";
+
+export const demoTimetables: Record<string, string> = { p1, p2, p3, p4 };
 export const demoMinutes: Record<number, string> = {}; // C5에서 ?raw import로 채움
 
 // 데모 캐시
